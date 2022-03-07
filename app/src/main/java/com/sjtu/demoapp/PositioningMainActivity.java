@@ -202,7 +202,7 @@ public class PositioningMainActivity extends AppCompatActivity {
                 try {
                     float f = Float.parseFloat(s.toString());
                     if (f > 0) {
-                        locator.neighborDistance = f;
+                        locator.neighborDistance = f/100f;
                     } else {
                         locator.neighborDistance = 0.2;
                     }

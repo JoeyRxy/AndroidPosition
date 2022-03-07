@@ -172,10 +172,12 @@ public class Locator {
 //        dataMap.replaceAll((k, v) -> v - dataMaxValue);
 
         //开始计算欧氏距离
-        float distance2 = 0;
+        double distance2 = 0;
         for (Map.Entry<Integer, Integer> entry : infoMap.entrySet()) {
             int infoRSS = entry.getValue();
+            double infoNum = Math.pow(10, (infoRSS+140)/10f);
             int dataRSS = dataMap.get(entry.getKey()) != null ? dataMap.get(entry.getKey()) : -140;
+            double dataNum = Math.pow(10, (dataRSS+140)/10f);
             distance2 += (infoRSS - dataRSS) * (infoRSS - dataRSS);
         }
         return Math.sqrt(distance2);

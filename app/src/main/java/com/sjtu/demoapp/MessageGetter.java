@@ -10,6 +10,7 @@ import android.telephony.CellInfoGsm;
 import android.telephony.CellInfoLte;
 import android.telephony.CellInfoNr;
 import android.telephony.CellInfoWcdma;
+import android.telephony.CellSignalStrengthNr;
 import android.telephony.SubscriptionManager;
 import android.telephony.TelephonyManager;
 import android.util.Log;
@@ -127,7 +128,7 @@ public class MessageGetter {
                 CellIdentityNr cellIdentityNr = (CellIdentityNr) cellInfoNr.getCellIdentity();
                 if (filterCell(cellIdentityNr.getPci())) {
                     infoStruct.cellSignalStrengthMap.put(cellIdentityNr.getPci(),
-                            cellInfoNr.getCellSignalStrength().getDbm());
+                            ((CellSignalStrengthNr)cellInfoNr.getCellSignalStrength()).getSsRsrp()*-1);
                 }
             }
         }
