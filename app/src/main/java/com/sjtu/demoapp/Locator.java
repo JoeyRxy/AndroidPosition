@@ -23,15 +23,16 @@ public class Locator {
     public int n = 3;
     public int threshold = 5;
     public double neighborDistance = 0.2;
-    public static double DIR_DISABLE = 100;
+    public boolean dirEnable = true;
     public Locator() {
 
     }
 
-    public Locator(int n, int threshold, int neighborDistance) {
+    public Locator(int n, int threshold, int neighborDistance, boolean dirEnable) {
         this.n = n;
         this.threshold = threshold;
         this.neighborDistance = neighborDistance;
+        this.dirEnable = dirEnable;
     }
 
     void locateWithRSSI(InfoStruct info, LocateCallback callback, InfoStruct lastRes, Direction lastDir) {
@@ -49,7 +50,7 @@ public class Locator {
                         maxId = entry.getKey();
                     }
                 }
-                //先比较最大的 做第一次划分 阈值3
+                //先比较最大的 做第一次划分 阈值5
                 List<InfoStruct> sameAreaData = new ArrayList<>();
                 for (InfoStruct infoStruct : infoStructs) {
                     Integer value = infoStruct.getCellSignalStrengthMap().get(maxId);
@@ -58,7 +59,7 @@ public class Locator {
                         if (lastRes != null) {
                             double mapDistance = Math.sqrt((lastRes.x - infoStruct.x) * (lastRes.x - infoStruct.x) + (lastRes.y - infoStruct.y) * (lastRes.y - infoStruct.y));
                             if (mapDistance <= neighborDistance) {
-                                if (lastDir != Direction.NONE && neighborDistance != DIR_DISABLE) {
+                                if (lastDir != Direction.NONE && dirEnable) {
                                     switch (lastDir) {
                                         case UP:
                                             if (infoStruct.y <= lastRes.y) {

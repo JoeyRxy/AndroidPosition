@@ -183,13 +183,7 @@ public class PositioningMainActivity extends AppCompatActivity {
         disableBox.setOnCheckedChangeListener(new CompoundButton.OnCheckedChangeListener() {
             @Override
             public void onCheckedChanged(CompoundButton buttonView, boolean isChecked) {
-                if(isChecked) {
-                    neighborDisText.setEnabled(false);
-                    locator.neighborDistance = Locator.DIR_DISABLE;
-                } else {
-                    neighborDisText.setEnabled(true);
-                    locator.neighborDistance = 0.2;
-                }
+                locator.dirEnable = !isChecked;
             }
         });
         neighborDisText.addTextChangedListener(new TextWatcher() {
