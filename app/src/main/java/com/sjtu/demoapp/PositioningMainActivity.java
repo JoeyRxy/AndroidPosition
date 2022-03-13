@@ -41,9 +41,11 @@ import java.util.concurrent.Callable;
 import bolts.Task;
 
 public class PositioningMainActivity extends AppCompatActivity {
+    private final int SAMPLE_COUNT_THRESHOLD = 5;
     PhotoView pv;
     int currentMap;
     int fps = 5;
+    int sampleCount = 0;
     Paint paint = new Paint();
     float pointRadius;
     Button moveLeftBtn;
@@ -277,6 +279,11 @@ public class PositioningMainActivity extends AppCompatActivity {
                         if(!infoStruct.equals(lastInfo)) {
                             InfoDatabase.getInstance().infoDao().insert(infoStruct);
                             lastInfo = infoStruct;
+                        } else if (sampleCount == SAMPLE_COUNT_THRESHOLD){
+                            sampleCount = 0;
+                            InfoDatabase.getInstance().infoDao().insert(infoStruct);
+                        } else {
+                            sampleCount++;
                         }
                         if(MessageGetter.sampling) {
                             runOnUiThread(new Runnable() {

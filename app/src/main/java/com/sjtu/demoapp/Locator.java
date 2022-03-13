@@ -174,11 +174,12 @@ public class Locator {
         //开始计算欧氏距离
         double distance2 = 0;
         for (Map.Entry<Integer, Integer> entry : infoMap.entrySet()) {
+            //todo: 未测试新的距离计算方式是否有效
             int infoRSS = entry.getValue();
             double infoNum = Math.pow(10, (infoRSS+140)/10f);
             int dataRSS = dataMap.get(entry.getKey()) != null ? dataMap.get(entry.getKey()) : -140;
             double dataNum = Math.pow(10, (dataRSS+140)/10f);
-            distance2 += (infoRSS - dataRSS) * (infoRSS - dataRSS);
+            distance2 += (infoNum - dataNum) * (infoNum - dataNum);
         }
         return Math.sqrt(distance2);
     }
