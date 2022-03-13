@@ -279,6 +279,7 @@ public class PositioningMainActivity extends AppCompatActivity {
                         if(!infoStruct.equals(lastInfo)) {
                             InfoDatabase.getInstance().infoDao().insert(infoStruct);
                             lastInfo = infoStruct;
+                            sampleCount = 0;
                         } else if (sampleCount == SAMPLE_COUNT_THRESHOLD){
                             sampleCount = 0;
                             InfoDatabase.getInstance().infoDao().insert(infoStruct);
