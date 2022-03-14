@@ -21,7 +21,8 @@ import bolts.Task;
 public class Locator {
     private static final String TAG = "Locator";
     public int n = 3;
-    public int threshold = 5;
+    public int defThreshold = 5;
+    public int threshold = defThreshold;
     public double neighborDistance = 0.2;
     public boolean dirEnable = true;
     public Locator() {
@@ -52,45 +53,54 @@ public class Locator {
                 }
                 //先比较最大的 做第一次划分 阈值5
                 List<InfoStruct> sameAreaData = new ArrayList<>();
-                for (InfoStruct infoStruct : infoStructs) {
-                    Integer value = infoStruct.getCellSignalStrengthMap().get(maxId);
-                    if (value != null && value >= maxValue - threshold && value <= maxValue + threshold) {
-                        //加一个是否在附近的判断，再加入对应方向的筛选
-                        if (lastRes != null) {
-                            double mapDistance = Math.sqrt((lastRes.x - infoStruct.x) * (lastRes.x - infoStruct.x) + (lastRes.y - infoStruct.y) * (lastRes.y - infoStruct.y));
-                            if (mapDistance <= neighborDistance) {
-                                if (lastDir != Direction.NONE && dirEnable) {
-                                    switch (lastDir) {
-                                        case UP:
-                                            if (infoStruct.y <= lastRes.y) {
-                                                sameAreaData.add(infoStruct);
-                                            }
-                                            break;
-                                        case DOWN:
-                                            if (infoStruct.y >= lastRes.y) {
-                                                sameAreaData.add(infoStruct);
-                                            }
-                                            break;
-                                        case LEFT:
-                                            if (infoStruct.x <= lastRes.x) {
-                                                sameAreaData.add(infoStruct);
-                                            }
-                                            break;
-                                        case RIGHT:
-                                            if (infoStruct.x >= lastRes.x) {
-                                                sameAreaData.add(infoStruct);
-                                            }
-                                            break;
+                threshold = defThreshold;
+                //让阈值自行增加直至找到对应点，避免最大阈值突变带来的找不到的问题
+                do {
+                    for (InfoStruct infoStruct : infoStructs) {
+                        Integer value = infoStruct.getCellSignalStrengthMap().get(maxId);
+                        //当填入阈值大于20，直接禁用阈值筛选
+                        if (threshold >= 20 || value != null && value >= maxValue - threshold && value <= maxValue + threshold) {
+                            //加一个是否在附近的判断，再加入对应方向的筛选
+                            if (lastRes != null) {
+                                double mapDistance = Math.sqrt((lastRes.x - infoStruct.x) * (lastRes.x - infoStruct.x) + (lastRes.y - infoStruct.y) * (lastRes.y - infoStruct.y));
+                                if (mapDistance <= neighborDistance) {
+                                    if (lastDir != Direction.NONE && dirEnable) {
+                                        switch (lastDir) {
+                                            case UP:
+                                                if (infoStruct.y <= lastRes.y) {
+                                                    sameAreaData.add(infoStruct);
+                                                }
+                                                break;
+                                            case DOWN:
+                                                if (infoStruct.y >= lastRes.y) {
+                                                    sameAreaData.add(infoStruct);
+                                                }
+                                                break;
+                                            case LEFT:
+                                                if (infoStruct.x <= lastRes.x) {
+                                                    sameAreaData.add(infoStruct);
+                                                }
+                                                break;
+                                            case RIGHT:
+                                                if (infoStruct.x >= lastRes.x) {
+                                                    sameAreaData.add(infoStruct);
+                                                }
+                                                break;
+                                        }
+                                    } else {
+                                        sameAreaData.add(infoStruct);
                                     }
-                                } else {
-                                    sameAreaData.add(infoStruct);
                                 }
+                            } else {
+                                sameAreaData.add(infoStruct);
                             }
-                        } else {
-                            sameAreaData.add(infoStruct);
                         }
                     }
-                }
+                    if(sameAreaData.size() == 0 && threshold <= 15) threshold += 5;
+                    else if(sameAreaData.size() == 0 && threshold < 20) threshold = 20;
+                    else if(sameAreaData.size() == 0) threshold = 21;
+                } while (sameAreaData.size() == 0 && threshold <= 20);
+
                 if (sameAreaData.size() == 0) return new InfoStruct();
                 //然后对后续数据进行归一化之后再进行排序,求欧氏距离（暂时取消归一化）
                 PriorityQueue<CompareData> minHeap = new PriorityQueue<CompareData>(11, new Comparator<CompareData>() { //大顶堆，容量11
@@ -105,7 +115,7 @@ public class Locator {
                     minHeap.add(dfl);
                 }
 
-                //最小堆中现在已有排序后的距离数据了，取n个来平均，默认为5
+                //最小堆中现在已有排序后的距离数据了，取n个来平均，默认为3
                 List<CompareData> locateData = new ArrayList<>();
                 for (int i = 0; i < n; i++) {
                     CompareData d = minHeap.poll();
@@ -175,11 +185,21 @@ public class Locator {
         double distance2 = 0;
         for (Map.Entry<Integer, Integer> entry : infoMap.entrySet()) {
             //todo: 未测试新的距离计算方式是否有效
+            //用上次数据测下来并不如直接用DB计算，先改回去
             int infoRSS = entry.getValue();
             double infoNum = Math.pow(10, (infoRSS+140)/10f);
             int dataRSS = dataMap.get(entry.getKey()) != null ? dataMap.get(entry.getKey()) : -140;
             double dataNum = Math.pow(10, (dataRSS+140)/10f);
-            distance2 += (infoNum - dataNum) * (infoNum - dataNum);
+            distance2 += (infoRSS - dataRSS) * (infoRSS - dataRSS);
+        }
+        for (Map.Entry<Integer, Integer> entry : dataMap.entrySet()) {
+            if(!infoMap.containsKey(entry.getKey())) {
+                int infoRSS = -140;
+                double infoNum = Math.pow(10, (infoRSS+140)/10f);
+                int dataRSS = entry.getValue();
+                double dataNum = Math.pow(10, (dataRSS+140)/10f);
+                distance2 += (infoRSS - dataRSS) * (infoRSS - dataRSS);
+            }
         }
         return Math.sqrt(distance2);
     }

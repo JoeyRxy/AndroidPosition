@@ -173,9 +173,9 @@ public class PositioningMainActivity extends AppCompatActivity {
                 try {
                     int f = Integer.parseInt(s.toString());
                     if (f > 0) {
-                        locator.threshold = f;
+                        locator.defThreshold = f;
                     } else {
-                        locator.threshold = 5;
+                        locator.defThreshold = 5;
                     }
                 } catch (Exception e) {
                     e.printStackTrace();
