@@ -13,6 +13,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.TextView;
 
+import com.sjtu.demoapp.database.InfoDao;
 import com.sjtu.demoapp.database.InfoDatabase;
 
 import java.util.List;
@@ -38,7 +39,7 @@ public class ShowInfoActivity extends AppCompatActivity {
         RecyclerView rv = findViewById(R.id.rv);
         InfoAdapter adapter;
         if(related != Integer.MIN_VALUE) {
-            adapter = new InfoAdapter(InfoDatabase.getInstance().infoDao().loadData(related), this);
+            adapter = new InfoAdapter(InfoDatabase.getInstance().infoDao().loadAllByFloor(related), this);
         } else {
             adapter = new InfoAdapter(InfoDatabase.getInstance().infoDao().loadAll(), this);
         }
@@ -76,7 +77,8 @@ class InfoAdapter extends RecyclerView.Adapter<InfoAdapter.InfoViewHolder> {
     public void onBindViewHolder(@NonNull InfoViewHolder holder, int position) {
         StringBuilder sb = new StringBuilder();
         InfoStruct d = data.get(position);
-        sb.append("x : ").append(d.x).append(", y : ").append(d.y).append('\n').append("F : ").append(d.floor).append('\n');
+        Location loc = InfoDatabase.getInstance().locationDao().queryLocation(d.getLocId());
+        sb.append("x : ").append(loc.getX()).append(", y : ").append(loc.getY()).append('\n').append("F : ").append(loc.getFloor()).append('\n');
         for (Map.Entry<Integer, Integer> entry : d.cellSignalStrengthMap.entrySet()) {
             sb.append(entry.getKey()).append(" : ").append(entry.getValue()).append('\n');
         }

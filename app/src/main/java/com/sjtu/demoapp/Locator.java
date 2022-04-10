@@ -6,13 +6,18 @@ import android.util.Pair;
 
 import com.sjtu.demoapp.database.InfoDatabase;
 
+import org.apache.commons.math3.analysis.function.Max;
+
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.PriorityQueue;
 import java.util.concurrent.Callable;
+import java.util.function.Function;
 
 
 import bolts.Continuation;
@@ -25,8 +30,17 @@ public class Locator {
     public int threshold = defThreshold;
     public double neighborDistance = 0.2;
     public boolean dirEnable = true;
-    public Locator() {
+    private HashMap<Integer, MaxPosteriProb> mapOnFloor;
 
+    public Locator() {
+        HashMap<Integer, HashMap<Location, HashMap<Integer, Stat>>> locStatMapOnFloor = new HashMap<>();
+        mapOnFloor = new HashMap<>();
+        for (Location loc : InfoDatabase.getInstance().locationDao().loadAll()) {
+            locStatMapOnFloor.computeIfAbsent(loc.getFloor(), k -> new HashMap<>()).put(loc, InfoDatabase.getInstance().statDao().getStat(loc.getId()).getStatMap());
+        }
+        for (Map.Entry<Integer, HashMap<Location, HashMap<Integer, Stat>>> entry : locStatMapOnFloor.entrySet()) {
+            mapOnFloor.put(entry.getKey(), new MaxPosteriProb(entry.getValue().keySet(), entry.getValue()));
+        }
     }
 
     public Locator(int n, int threshold, int neighborDistance, boolean dirEnable) {
@@ -36,173 +50,10 @@ public class Locator {
         this.dirEnable = dirEnable;
     }
 
-    void locateWithRSSI(InfoStruct info, LocateCallback callback, InfoStruct lastRes, Direction lastDir) {
-        Task.callInBackground(new Callable<InfoStruct>() {
-            @Override
-            public InfoStruct call() throws Exception {
-                //从数据库取数据
-                List<InfoStruct> infoStructs = InfoDatabase.getInstance().infoDao().loadData(info.floor);
-                //先找到现有数据里最大的那个
-                int maxId = Integer.MIN_VALUE;
-                int maxValue = Integer.MIN_VALUE;
-                for (Map.Entry<Integer, Integer> entry : info.getCellSignalStrengthMap().entrySet()) {
-                    if (entry.getValue() > maxValue) {
-                        maxValue = entry.getValue();
-                        maxId = entry.getKey();
-                    }
-                }
-                //先比较最大的 做第一次划分 阈值5
-                List<InfoStruct> sameAreaData = new ArrayList<>();
-                threshold = defThreshold;
-                //让阈值自行增加直至找到对应点，避免最大阈值突变带来的找不到的问题
-                do {
-                    for (InfoStruct infoStruct : infoStructs) {
-                        Integer value = infoStruct.getCellSignalStrengthMap().get(maxId);
-                        //当填入阈值大于20，直接禁用阈值筛选
-                        if (threshold >= 20 || value != null && value >= maxValue - threshold && value <= maxValue + threshold) {
-                            //加一个是否在附近的判断，再加入对应方向的筛选
-                            if (lastRes != null) {
-                                double mapDistance = Math.sqrt((lastRes.x - infoStruct.x) * (lastRes.x - infoStruct.x) + (lastRes.y - infoStruct.y) * (lastRes.y - infoStruct.y));
-                                if (mapDistance <= neighborDistance) {
-                                    if (lastDir != Direction.NONE && dirEnable) {
-                                        switch (lastDir) {
-                                            case UP:
-                                                if (infoStruct.y <= lastRes.y) {
-                                                    sameAreaData.add(infoStruct);
-                                                }
-                                                break;
-                                            case DOWN:
-                                                if (infoStruct.y >= lastRes.y) {
-                                                    sameAreaData.add(infoStruct);
-                                                }
-                                                break;
-                                            case LEFT:
-                                                if (infoStruct.x <= lastRes.x) {
-                                                    sameAreaData.add(infoStruct);
-                                                }
-                                                break;
-                                            case RIGHT:
-                                                if (infoStruct.x >= lastRes.x) {
-                                                    sameAreaData.add(infoStruct);
-                                                }
-                                                break;
-                                        }
-                                    } else {
-                                        sameAreaData.add(infoStruct);
-                                    }
-                                }
-                            } else {
-                                sameAreaData.add(infoStruct);
-                            }
-                        }
-                    }
-                    if(sameAreaData.size() == 0 && threshold <= 15) threshold += 5;
-                    else if(sameAreaData.size() == 0 && threshold < 20) threshold = 20;
-                    else if(sameAreaData.size() == 0) threshold = 21;
-                } while (sameAreaData.size() == 0 && threshold <= 20);
-
-                if (sameAreaData.size() == 0) return new InfoStruct();
-                //然后对后续数据进行归一化之后再进行排序,求欧氏距离（暂时取消归一化）
-                PriorityQueue<CompareData> minHeap = new PriorityQueue<CompareData>(11, new Comparator<CompareData>() { //大顶堆，容量11
-                    @Override
-                    public int compare(CompareData i1, CompareData i2) {
-                        return Float.compare(i1.distance, i2.distance);
-                    }
-                });
-                for (InfoStruct data : sameAreaData) {
-                    double distance = calculateDataDistance(info, data, maxId);
-                    CompareData dfl = new CompareData(data.x, data.y, data.floor, (float) distance);
-                    minHeap.add(dfl);
-                }
-
-                //最小堆中现在已有排序后的距离数据了，取n个来平均，默认为3
-                List<CompareData> locateData = new ArrayList<>();
-                for (int i = 0; i < n; i++) {
-                    CompareData d = minHeap.poll();
-                    if (d != null) {
-                        locateData.add(d);
-                        Log.d(TAG, "定位中： 取出第" + i + "小的元素，为： " + d.distance);
-                    } else {
-                        break;
-                    }
-                }
-
-                InfoStruct result = new InfoStruct();
-                try {
-                    result.floor = locateData.get(0).floor;
-                    float totalPower = 0;
-                    //权重是距离的倒数，距离越近应当权重越大
-                    for (CompareData locateDatum : locateData) {
-                        if (locateDatum.distance != 0) {
-                            totalPower += 1 / locateDatum.distance;
-                        } else {
-                            InfoStruct res = new InfoStruct();
-                            res.floor = locateDatum.floor;
-                            res.x = locateDatum.x;
-                            res.y = locateDatum.y;
-                            return res;
-                        }
-                    }
-                    result.x = 0;
-                    result.y = 0;
-                    for (CompareData locateDatum : locateData) {
-                        result.x += locateDatum.x * (1 / locateDatum.distance) / totalPower;
-                        result.y += locateDatum.y * (1 / locateDatum.distance) / totalPower;
-                    }
-                    Log.d(TAG, "call: 最终得到的坐标" + result.x + ", " + result.y + ", " + result.floor + "F");
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-
-                return result;
-            }
-        }).continueWith(new Continuation<InfoStruct, Object>() {
-            @Override
-            public Object then(Task<InfoStruct> task) throws Exception {
-                callback.run(task.getResult());
-                return null;
-            }
-        }, Task.UI_THREAD_EXECUTOR);
-
-
+    public Location locateByMAP(final InfoStruct info, int floor) {
+        return Objects.requireNonNull(mapOnFloor.get(floor)).predict(info.cellSignalStrengthMap);
     }
 
-    private double calculateDataDistance(InfoStruct info, InfoStruct data, int maxId) {
-        //map 拷贝一下 不修改原数据 避免意外
-        HashMap<Integer, Integer> infoMap = new HashMap<>(info.getCellSignalStrengthMap());
-        HashMap<Integer, Integer> dataMap = new HashMap<>(data.getCellSignalStrengthMap());
-//        if(infoMap.get(maxId) == null || dataMap.get(maxId) == null) {
-//            Log.d(TAG, "calculateDataDistance: Error! Null max value");
-//            return 0;
-//        }
-        //归一化所有数据，减少整体波动带来的影响（暂时取消归一化）
-//        int maxValue = infoMap.get(maxId);
-//        infoMap.replaceAll((k, v) -> v - maxValue);
-//        int dataMaxValue = dataMap.get(maxId);
-//        dataMap.replaceAll((k, v) -> v - dataMaxValue);
-
-        //开始计算欧氏距离
-        double distance2 = 0;
-        for (Map.Entry<Integer, Integer> entry : infoMap.entrySet()) {
-            //todo: 未测试新的距离计算方式是否有效
-            //用上次数据测下来并不如直接用DB计算，先改回去
-            int infoRSS = entry.getValue();
-            double infoNum = Math.pow(10, (infoRSS+140)/10f);
-            int dataRSS = dataMap.get(entry.getKey()) != null ? dataMap.get(entry.getKey()) : -140;
-            double dataNum = Math.pow(10, (dataRSS+140)/10f);
-            distance2 += (infoRSS - dataRSS) * (infoRSS - dataRSS);
-        }
-        for (Map.Entry<Integer, Integer> entry : dataMap.entrySet()) {
-            if(!infoMap.containsKey(entry.getKey())) {
-                int infoRSS = -140;
-                double infoNum = Math.pow(10, (infoRSS+140)/10f);
-                int dataRSS = entry.getValue();
-                double dataNum = Math.pow(10, (dataRSS+140)/10f);
-                distance2 += (infoRSS - dataRSS) * (infoRSS - dataRSS);
-            }
-        }
-        return Math.sqrt(distance2);
-    }
 }
 
 interface LocateCallback {

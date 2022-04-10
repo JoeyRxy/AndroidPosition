@@ -16,10 +16,19 @@ public interface InfoDao {
     List<InfoStruct> loadAll();
 
     @Query("SELECT * FROM infos WHERE id IN (:infoids)")
-    List<InfoStruct> loadAllByInfoId(int... infoids);
+    List<InfoStruct> loadAllByInfoId(long... infoids);
 
-    @Query("SELECT * FROM infos WHERE floor BETWEEN (:currentFloor - 1) AND (:currentFloor + 1)")
-    List<InfoStruct> loadData(int currentFloor);
+    @Query("SELECT * FROM infos WHERE loc_id = (SELECT id FROM location WHERE floor = :floor)")
+    List<InfoStruct> loadAllByFloor(int floor);
+
+    @Query("SELECT * FROM infos WHERE loc_id = :loc_id")
+    List<InfoStruct> loadByLocId(long loc_id);
+
+    @Query("SELECT * FROM infos WHERE loc_id = (SELECT id FROM location WHERE floor = :floor AND x = :x AND y = :y)")
+    List<InfoStruct> loadByCoord(int floor, float x, float y);
+
+    @Query("SELECT * FROM infos WHERE loc_id = (SELECT id FROM location WHERE floor = 0 AND x = :x AND y = :y)")
+    List<InfoStruct> loadByCoord(float x, float y);
 
     @Insert
     void insertAll(InfoStruct... infoStructs);

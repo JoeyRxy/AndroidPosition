@@ -1,21 +1,13 @@
 package com.sjtu.demoapp;
 
-import androidx.annotation.RequiresApi;
-import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.content.ContextCompat;
-
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
-import android.graphics.Matrix;
 import android.graphics.Paint;
-import android.graphics.Rect;
-import android.graphics.RectF;
 import android.graphics.drawable.BitmapDrawable;
-import android.graphics.drawable.Drawable;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
@@ -24,21 +16,20 @@ import android.os.Build;
 import android.os.Bundle;
 import android.text.Editable;
 import android.text.TextWatcher;
-import android.util.Log;
 import android.widget.Button;
 import android.widget.CheckBox;
 import android.widget.CompoundButton;
 import android.widget.EditText;
 import android.widget.Toast;
 
+import androidx.annotation.RequiresApi;
+import androidx.appcompat.app.AppCompatActivity;
+
 import com.github.chrisbanes.photoview.OnScaleChangedListener;
 import com.github.chrisbanes.photoview.PhotoView;
 import com.sjtu.demoapp.database.InfoDatabase;
 
-import java.util.Timer;
-import java.util.concurrent.Callable;
-
-import bolts.Task;
+import java.util.List;
 
 public class PositioningMainActivity extends AppCompatActivity {
     private final int SAMPLE_COUNT_THRESHOLD = 5;
@@ -78,7 +69,7 @@ public class PositioningMainActivity extends AppCompatActivity {
     private Sensor laSensor;
     MessageGetter getter = new MessageGetter(this);
     InfoStruct lastInfo = null;
-    InfoStruct lastRes = null;
+    Location lastRes = null;
     boolean scaled = false;
     public final String TAG = "PositioningMain";
     private Direction lastDir = Direction.NONE;
@@ -272,9 +263,13 @@ public class PositioningMainActivity extends AppCompatActivity {
                 getter.getMessageRepeatedly(fps, new CellInfoCallback() {
                     @Override
                     public void onCellInfoAnalysed(InfoStruct infoStruct) {
-                        infoStruct.x = nowX/currentMapWidth;
-                        infoStruct.y = nowY/currentMapHeight;
-                        infoStruct.floor = analyseFloor(currentMap);
+                        float x = nowX / currentMapWidth, y = nowY / currentMapHeight;
+                        int floor = analyseFloor(currentMap);
+                        Long locId = InfoDatabase.getInstance().locationDao().queryLocId(floor, x, y);
+                        if (locId == null)
+                            locId = InfoDatabase.getInstance().locationDao().insertLocation(new Location(floor, x, y));
+
+                        infoStruct.setLocId(locId);
                         //去重操作
                         if(!infoStruct.equals(lastInfo)) {
                             InfoDatabase.getInstance().infoDao().insert(infoStruct);
@@ -318,20 +313,21 @@ public class PositioningMainActivity extends AppCompatActivity {
             locate(new LocateCallback() {
                 @Override
                 public void run(InfoStruct position) {
-                    if(position.x != 0 || position.y != 0) {
+                    Location loc = InfoDatabase.getInstance().locationDao().queryLocation(position.getLocId());
+                    if(loc.getX() != 0 || loc.getY() != 0) {
                         setPosition(position);
                         float nowOri = getOrientation();
                         if (Math.abs(nowOri - lastOri) > 30){
                             lastDir = Direction.NONE;
                         } else if (lastRes != null){
-                            if(Math.abs(position.x - lastRes.x) > Math.abs(position.y - lastRes.y)){
-                                if(position.x >= lastRes.x) {
+                            if(Math.abs(loc.getX() - lastRes.getX()) > Math.abs(loc.getY() - lastRes.getY())){
+                                if(loc.getX() >= lastRes.getX()) {
                                     lastDir = Direction.RIGHT;
                                 } else {
                                     lastDir = Direction.LEFT;
                                 }
                             } else {
-                                if(position.y >= lastRes.y) {
+                                if(loc.getY() >= lastRes.getY()) {
                                     lastDir = Direction.DOWN;
                                 } else {
                                     lastDir = Direction.UP;
@@ -339,7 +335,7 @@ public class PositioningMainActivity extends AppCompatActivity {
                             }
                         }
                         lastOri = nowOri;
-                        lastRes = position;
+                        lastRes = loc;
                     }
                 }
             });
@@ -347,7 +343,8 @@ public class PositioningMainActivity extends AppCompatActivity {
     }
 
     private void setPosition(InfoStruct position) {
-        int mapId = getMapId(position.floor);
+        Location loc = InfoDatabase.getInstance().locationDao().queryLocation(position.getLocId());
+        int mapId = getMapId(loc.getFloor());
         Bitmap map = BitmapFactory.decodeResource(getResources(),
                 mapId).copy(Bitmap.Config.ARGB_8888, true);
         if(mapId != currentMap) {
@@ -358,7 +355,22 @@ public class PositioningMainActivity extends AppCompatActivity {
             currentMapWidth = map.getWidth();
             pointRadius = (currentMapWidth * currentMapHeight)/50000f;
         }
-        setPosition(position.x * currentMapWidth, position.y * currentMapHeight, map);
+        setPosition(loc.getX() * currentMapWidth, loc.getY() * currentMapHeight, map);
+    }
+
+    private void setPosition(Location loc) {
+        int mapId = getMapId(loc.getFloor());
+        Bitmap map = BitmapFactory.decodeResource(getResources(),
+                mapId).copy(Bitmap.Config.ARGB_8888, true);
+        if(mapId != currentMap) {
+            scaled = false;
+            lastScaleFactor = 1;
+            currentMap = mapId;
+            currentMapHeight = map.getHeight();
+            currentMapWidth = map.getWidth();
+            pointRadius = (currentMapWidth * currentMapHeight)/50000f;
+        }
+        setPosition(loc.getX() * currentMapWidth, loc.getY() * currentMapHeight, map);
     }
 
     private int getMapId(int floor) {
@@ -409,7 +421,8 @@ public class PositioningMainActivity extends AppCompatActivity {
         getter.getAllSignalInfo(new CellInfoCallback() {
             @Override
             public void onCellInfoAnalysed(InfoStruct infoStruct) {
-                locator.locateWithRSSI(infoStruct, callback, lastRes, lastDir);
+//                locator.locateWithRSSI(infoStruct, callback, lastRes, lastDir);
+                setPosition(locator.locateByMAP(infoStruct, analyseFloor(currentMap)));
             }
         });
     }
